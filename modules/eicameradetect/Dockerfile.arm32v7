@@ -1,0 +1,53 @@
+#FROM arm32v7/python:3.7-slim-buster
+FROM balenalib/raspberrypi3:buster
+
+WORKDIR /app
+
+RUN echo "BUILD MODULE: Edge Impulse Camera Detect"
+
+# Enforces cross-compilation through Quemu
+RUN [ "cross-build-start" ]
+
+# Update package index and install dependencies
+RUN install_packages \
+    python3 \
+    python3-pip \
+    python3-dev \
+    # build-essential \
+    # libopenjp2-7-dev \
+    # zlib1g-dev \
+    # wget \
+    # libboost-python1.62.0 \
+    # curl \
+    # libcurl4-openssl-dev \
+    libatlas-base-dev \
+    libportaudio0 \
+    libportaudio2 \
+    libportaudiocpp0 \
+    portaudio19-dev
+
+# Required for OpenCV
+RUN install_packages \
+    # Hierarchical Data Format
+    libhdf5-dev libhdf5-serial-dev \
+    # for image files
+    libjpeg-dev libtiff5-dev libjasper-dev libpng-dev \
+    # for video files
+    libavcodec-dev libavformat-dev libswscale-dev libv4l-dev \
+    # for gui
+    libqt4-test libqtgui4 libqtwebkit4 libgtk-3-0 \
+    # libgtk2.0-dev eller libgtk-3-dev
+    # high def image processing
+    libilmbase-dev libopenexr-dev
+
+# RUN apt-get install libatlas-base-dev libportaudio0 libportaudio2 libportaudiocpp0 portaudio19-dev
+RUN pip3 install edge_impulse_linux -i https://pypi.python.org/simple
+
+COPY requirements.txt ./
+RUN pip3 install -r requirements.txt
+
+COPY . .
+
+RUN [ "cross-build-end" ]
+
+CMD [ "python3", "-u", "./main.py", "modelfile.eim"]
