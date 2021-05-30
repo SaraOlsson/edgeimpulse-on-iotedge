@@ -49,6 +49,8 @@ async def main():
 
         print ( "The sample is now waiting for messages. ")
 
+        await module_client.send_message_to_output("Helloooooo", "output2")
+
         # Run the stdin listener in the event loop
         loop = asyncio.get_event_loop()
         user_finished = loop.run_in_executor(None, stdin_listener)

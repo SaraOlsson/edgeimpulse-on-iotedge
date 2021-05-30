@@ -1,13 +1,21 @@
 #!/usr/bin/env python
 
+import asyncio
 from pyexpat import features
+from xxlimited import Null
 import cv2
 import os
 import sys, getopt
 import signal
 import time
+import json
 from edge_impulse_linux.image import ImageImpulseRunner
 import numpy as np
+
+from azure.iot.device.aio import IoTHubModuleClient
+# from azure.iot.device.aio import (IoTHubModuleClient, IoTHubError,
+#                            IoTHubMessage,
+#                            IoTHubTransportProvider)
 
 runner = None
 show_camera = False
@@ -86,7 +94,10 @@ def get_features(ei_runner, image):
 
     return features
 
-def main(argv):
+async def main(argv):
+
+    global module_client
+
     try:
         opts, args = getopt.getopt(argv, "h", ["--help"])
     except getopt.GetoptError:
@@ -109,14 +120,21 @@ def main(argv):
 
     print('MODEL: ' + modelfile)
 
+    # ** IoT Edge **
+    # The client object is used to interact with your Azure IoT hub.
+    module_client = IoTHubModuleClient.create_from_edge_environment()
+
+    # connect the client.
+    await module_client.connect()
+    # ** IoT Edge end **
+
     with ImageImpulseRunner(modelfile) as runner:
         try:
             model_info = runner.init()
             print('Loaded runner for "' + model_info['project']['owner'] + ' / ' + model_info['project']['name'] + '"')
             labels = model_info['model_parameters']['labels']
             
-            # *************************************
-
+            # ***********************************
             test_img = cv2.imread('model_test.jpg', cv2.COLOR_BGR2HSV)
             features = get_features(runner, test_img)
             test_res = runner.classify(features)
@@ -124,9 +142,52 @@ def main(argv):
             if "bounding_boxes" in test_res["result"].keys():
                     print('Test: Found %d bounding boxes (%d ms.)' % (len(test_res["result"]["bounding_boxes"]), test_res['timing']['dsp'] + test_res['timing']['classification']))
                     for bb in test_res["result"]["bounding_boxes"]:
-                        print('\t%s (%.2f): x=%d y=%d w=%d h=%d' % (bb['label'], bb['value'], bb['x'], bb['y'], bb['width'], bb['height']))
-            
-            # *************************************
+                        response = '\t%s (%.2f): x=%d y=%d w=%d h=%d' % (bb['label'], bb['value'], bb['x'], bb['y'], bb['width'], bb['height'])
+                        print(response)
+                        if module_client is not None:
+                            #await module_client.send_message(response)
+                            await module_client.send_message_to_output(response, "output2")
+
+                            # a Python object (dict):
+                            x = {
+                                "class": bb['label'],
+                                "score": bb['value'],
+                                "rect": {
+                                    "x": bb['x'],
+                                    "y": bb['y'],
+                                    "width": bb['width'],
+                                    "height": bb['height']
+                                }
+                            }
+
+                            # convert into JSON:
+                            y = json.dumps(x)
+                            await module_client.send_message_to_output(y, "classification")
+
+            # ************************************
+
+            # define behavior for halting the application
+            def stdin_listener():
+                while True:
+                    try:
+                        selection = input("Press Q to quit\n")
+                        if selection == "Q" or selection == "q":
+                            print("Quitting...")
+                            break
+                    except:
+                        time.sleep(10)
+
+            # Run the stdin listener in the event loop
+            print("INFO: run_in_executor...")
+            loop = asyncio.get_event_loop()
+            user_finished = loop.run_in_executor(None, stdin_listener)
+
+            # Wait for user to indicate they are done listening for messages
+            await user_finished
+
+            print("INFO: user_finished...")
+
+            # ********
 
             if len(args)>= 2:
                 videoCaptureDeviceId = int(args[1])
@@ -184,4 +245,8 @@ def main(argv):
                 runner.stop()
 
 if __name__ == "__main__":
-   main(sys.argv[1:])
+   #main(sys.argv[1:])
+
+   loop = asyncio.get_event_loop()
+   loop.run_until_complete(main(sys.argv[1:]))
+   loop.close()

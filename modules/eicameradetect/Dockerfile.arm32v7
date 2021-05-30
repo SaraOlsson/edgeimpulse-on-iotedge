@@ -51,3 +51,4 @@ COPY . .
 RUN [ "cross-build-end" ]
 
 CMD [ "python3", "-u", "./main.py", "modelfile.eim"]
+# CMD [ "python3", "-u", "./default_main.py"]
