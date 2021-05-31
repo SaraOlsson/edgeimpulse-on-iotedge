@@ -49,6 +49,11 @@ Run the Command Palette (Ctrl+Shift+P) to easy access the extension commands and
 
 # Create a Python application
 
+The application code is based on the [Image example](https://github.com/edgeimpulse/linux-sdk-python/blob/master/examples/image/classify.py) in the repository of Edge Impulse Linux SDK for Python. Comparing the files, you will notice that I have also included the Azure IoT client to send telemetry data to the IoT Hub or another module.
+
+TODO: refactor main.py  
+TODO: add enviroment variables to justify capture rate, scoring threshold value etc.
+
 ![header image](media/pythoncode.png)
 
 # Build Docker image
