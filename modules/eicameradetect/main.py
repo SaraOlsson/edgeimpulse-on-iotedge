@@ -13,9 +13,6 @@ from edge_impulse_linux.image import ImageImpulseRunner
 import numpy as np
 
 from azure.iot.device.aio import IoTHubModuleClient
-# from azure.iot.device.aio import (IoTHubModuleClient, IoTHubError,
-#                            IoTHubMessage,
-#                            IoTHubTransportProvider)
 
 runner = None
 show_camera = False
@@ -96,7 +93,7 @@ def get_features(ei_runner, image):
 
 async def main(argv):
 
-    global module_client
+    #global module_client
 
     try:
         opts, args = getopt.getopt(argv, "h", ["--help"])
