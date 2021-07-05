@@ -80,16 +80,6 @@
                 }
               }
             }
-          },
-          "SimulatedTemperatureSensor": {
-            "version": "1.0",
-            "type": "docker",
-            "status": "running",
-            "restartPolicy": "always",
-            "settings": {
-              "image": "mcr.microsoft.com/azureiotedge-simulated-temperature-sensor:1.0",
-              "createOptions": {}
-            }
           }
         }
       }
@@ -98,8 +88,7 @@
       "properties.desired": {
         "schemaVersion": "1.0",
         "routes": {
-          "eicameradetectToIoTHub": "FROM /messages/modules/eicameradetect/outputs/* INTO $upstream",
-          "sensorToSamplePythonModule": "FROM /messages/modules/SimulatedTemperatureSensor/outputs/temperatureOutput INTO BrokeredEndpoint(\"/modules/eicameradetect/inputs/input1\")"
+          "eicameradetectToIoTHub": "FROM /messages/modules/eicameradetect/outputs/* INTO $upstream"
         },
         "storeAndForwardConfiguration": {
           "timeToLiveSecs": 7200
