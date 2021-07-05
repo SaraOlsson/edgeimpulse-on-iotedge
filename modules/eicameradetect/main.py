@@ -51,52 +51,6 @@ signal.signal(signal.SIGINT, sigint_handler)
 def help():
     print('python classify.py <path_to_model.eim> <Camera port ID, only required when more than 1 camera is present>')
 
-# if classifying image not from video
-# from here: https://github.com/edgeimpulse/linux-sdk-python/blob/master/edge_impulse_linux/image.py
-def get_features(ei_runner, image):
-
-    features = []
-    EI_CLASSIFIER_INPUT_WIDTH = ei_runner.dim[0]
-    EI_CLASSIFIER_INPUT_HEIGHT = ei_runner.dim[1]
-    in_frame_cols = image.shape[1]
-    in_frame_rows = image.shape[0]
-
-    print("Test image size: (%s x %s)" %(in_frame_cols,in_frame_rows))
-
-    factor_w = EI_CLASSIFIER_INPUT_WIDTH / in_frame_cols
-    factor_h = EI_CLASSIFIER_INPUT_HEIGHT / in_frame_rows
-    largest_factor = factor_w if factor_w > factor_h else factor_h
-
-    resize_size_w = int(largest_factor * in_frame_cols)
-    resize_size_h = int(largest_factor * in_frame_rows)
-    resize_size = (resize_size_w, resize_size_h)
-
-    resized = cv2.resize(image, resize_size, interpolation = cv2.INTER_AREA)
-
-    crop_x = int((resize_size_w - resize_size_h) / 2) if resize_size_w > resize_size_h else 0
-    crop_y = int((resize_size_h - resize_size_w) / 2) if resize_size_h > resize_size_w else 0
-
-    crop_region = (crop_x, crop_y, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT)
-
-    cropped = resized[crop_region[1]:crop_region[1]+crop_region[3], crop_region[0]:crop_region[0]+crop_region[2]]
-
-    if ei_runner.isGrayscale:
-        cropped = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
-        pixels = np.array(cropped).flatten().tolist()
-
-        for p in pixels:
-            features.append((p << 16) + (p << 8) + p)
-    else:
-        pixels = np.array(cropped).flatten().tolist()
-
-        for ix in range(0, len(pixels), 3):
-            b = pixels[ix + 0]
-            g = pixels[ix + 1]
-            r = pixels[ix + 2]
-            features.append((r << 16) + (g << 8) + b)
-
-    return features, cropped
-
 def handle_inference_result(res, img, labels):
 
     dict_result = {}
@@ -203,7 +157,7 @@ async def main(argv):
                 print("Did not found camera. Use test image")
                 image_path = os.path.join(dir_path, "model_test.jpg")
                 test_image = cv2.imread(image_path)
-                features, cropped = get_features(runner, test_image)
+                features, cropped = runner.get_features_from_image(test_image)
                 res = runner.classify(features)
                 handled_result = handle_inference_result(res, cropped, labels)
                 await send_json_telemetry(module_client, handled_result)
