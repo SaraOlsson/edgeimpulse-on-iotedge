@@ -20,6 +20,8 @@ show_camera = False
 # global counters
 SCORE_THRESHOLD = 0.5
 TWIN_CALLBACKS = 0
+RUN_CLASSIFICATION = False
+FRAME_TICK_MS = 100
 
 def now():
     return round(time.time() * 1000)
@@ -61,10 +63,11 @@ def handle_inference_result(res, img, labels):
             score = res['result']['classification'][label]
             print('%s: %.2f\t' % (label, score), end='')
 
-            dict_result = {
-                "class": label,
-                "score": score
-            }
+            if ( score >= SCORE_THRESHOLD):
+                dict_result = {
+                    "class": label,
+                    "score": score
+                }
 
         print('', flush=True)
 
@@ -77,24 +80,47 @@ def handle_inference_result(res, img, labels):
             response = '\t%s (%.2f): x=%d y=%d w=%d h=%d' % (bb['label'], bb['value'], bb['x'], bb['y'], bb['width'], bb['height'])
             print(response)
 
+            score = bb['value']
             # a Python object (dict):
-            dict_result = {
-                "class": bb['label'],
-                "score": bb['value'],
-                "rect": {
-                    "x": bb['x'],
-                    "y": bb['y'],
-                    "width": bb['width'],
-                    "height": bb['height']
+            if ( score >= SCORE_THRESHOLD):
+                dict_result = {
+                    "class": bb['label'],
+                    "score": bb['value'],
+                    "rect": {
+                        "x": bb['x'],
+                        "y": bb['y'],
+                        "width": bb['width'],
+                        "height": bb['height']
+                    }
                 }
-            }
     
     return dict_result
-
 
 async def send_json_telemetry(module_client, json_obj):
     json_str = json.dumps(json_obj)
     await module_client.send_message_to_output(json_str, "classification")
+
+async def idle():
+
+    # define behavior for halting the application
+    def stdin_listener():
+        while True:
+            try:
+                selection = input("Press Q to quit\n")
+                if selection == "Q" or selection == "q":
+                    print("Quitting...")
+                    break
+            except:
+                time.sleep(10)
+
+    print ( "The sample is now waiting for messages. ")
+
+    # Run the stdin listener in the event loop
+    loop = asyncio.get_event_loop()
+    user_finished = loop.run_in_executor(None, stdin_listener)
+
+    # Wait for user to indicate they are done listening for messages
+    await user_finished
 
 
 async def main(argv):
@@ -125,9 +151,10 @@ async def main(argv):
     # the client object is used to interact with your Azure IoT hub.
     module_client = IoTHubModuleClient.create_from_edge_environment()
     await module_client.connect()
-    #print('Run listeners')
-    #listeners = await asyncio.gather(twin_patch_listener(module_client))
-    #asyncio.run(listeners)
+    # Get inital twin settings
+    await get_twin_initialsettings(module_client) 
+    # Schedule task for C2D Listener
+    listeners = asyncio.gather(twin_patch_listener(module_client))
 
     # use ML model and read camerastream
     with ImageImpulseRunner(modelfile) as runner:
@@ -160,12 +187,13 @@ async def main(argv):
                 features, cropped = runner.get_features_from_image(test_image)
                 res = runner.classify(features)
                 handled_result = handle_inference_result(res, cropped, labels)
-                await send_json_telemetry(module_client, handled_result)
-                
 
-                print('classification runner response:', res, 'Sleep 5 sec then exit')
-                time.sleep(5)
-                return
+                if handled_result:
+                    await send_json_telemetry(module_client, handled_result)
+                
+                print('classification runner response:', res)
+                await idle()
+                pass
         
             # ready to open video camera (and print info)
             camera = cv2.VideoCapture(videoCaptureDeviceId)
@@ -180,40 +208,141 @@ async def main(argv):
                 raise Exception("Couldn't initialize selected camera.")
 
             next_frame = 0 # limit to ~10 fps here
-
             # run classifier (which also capture image)
-            for res, img in runner.classifier(videoCaptureDeviceId):
-                if (next_frame > now()):
-                    time.sleep((next_frame - now()) / 1000)
+            if RUN_CLASSIFICATION:
+                for res, img in runner.classifier(videoCaptureDeviceId):
+                    if (next_frame > now()):
+                        time.sleep((next_frame - now()) / 1000)
 
-                print('classification runner response', res)
-                handled_result = handle_inference_result(res, img, labels)
-                await send_json_telemetry(module_client, handled_result)
+                    print('classification runner response', res)
+                    handled_result = handle_inference_result(res, img, labels)
+                    await send_json_telemetry(module_client, handled_result)
 
-                next_frame = now() + 100
+                    next_frame = now() + FRAME_TICK_MS
         finally:
+
+            print("Ending program..")
             if (runner):
                 runner.stop()
+            
+            # Cancel listening
+            listeners.cancel()
+
+            # Finally, disconnect IoT client
+            await module_client.disconnect()
 
 
 async def twin_patch_listener(module_client):
         global TWIN_CALLBACKS
         global SCORE_THRESHOLD
-        print("in twin_patch_listener")
+        global RUN_CLASSIFICATION
+        global FRAME_TICK_MS
+        print("New twin patch")
         while True:
             try:
                 data = await module_client.receive_twin_desired_properties_patch()  # blocking call
                 print( "The data in the desired properties patch was: %s" % data)
-                if "ScoreThreshold" in data:
-                    SCORE_THRESHOLD = data["ScoreThreshold"]
-                    print("ScoreThreshold", SCORE_THRESHOLD)
+                SCORE_THRESHOLD = get_value_if_exists("scoreThreshold", data, SCORE_THRESHOLD)
+                RUN_CLASSIFICATION = get_value_if_exists("runClassification", data, RUN_CLASSIFICATION)
+                FRAME_TICK_MS = get_value_if_exists("frameTickMilliseconds", data, FRAME_TICK_MS)
                 TWIN_CALLBACKS += 1
                 print ( "Total calls confirmed: %d\n" % TWIN_CALLBACKS )
             except Exception as ex:
                 print ( "Unexpected error in twin_patch_listener: %s" % ex )
+
+def get_value_if_exists(property_name, twin_data, default_value):
+
+    value = default_value
+    if property_name in twin_data:
+        value = twin_data[property_name]
+        print(property_name,":", value)
+    return value
+
+
+async def get_twin_initialsettings(module_client):
+        global SCORE_THRESHOLD
+        global RUN_CLASSIFICATION
+        global FRAME_TICK_MS
+        print("Will try to get initial twin settings")
+        try:
+            data = await module_client.get_twin()  # blocking call
+            desired_properties = data['desired']
+            print( "The INITIAL data in the desired properties was: %s" % data)
+            SCORE_THRESHOLD = get_value_if_exists("scoreThreshold", desired_properties, SCORE_THRESHOLD)
+            RUN_CLASSIFICATION = get_value_if_exists("runClassification", desired_properties, RUN_CLASSIFICATION)
+            FRAME_TICK_MS = get_value_if_exists("frameTickMilliseconds", desired_properties, FRAME_TICK_MS)
+        except Exception as ex:
+            print ( "Unexpected error in get_twin_initialsettings: %s" % ex )
 
 if __name__ == "__main__":
 
    loop = asyncio.get_event_loop()
    loop.run_until_complete(main(sys.argv[1:]))
    loop.close()
+
+
+
+# draft 
+# await run_classifier_test(module_client)
+
+async def run_classifier_test(module_client):
+
+    # define behavior for halting the application
+    async def halt_until_run_command():
+        next_frame = 0 # limit to ~10 fps here
+        while True:
+            if RUN_CLASSIFICATION:
+                if (next_frame > now()):
+                    time.sleep((next_frame - now()) / 1000)
+                print('logic test (run classification)')
+                next_frame = now() + FRAME_TICK_MS
+
+                json_obj = {
+                    "status": "idle"
+                }
+                json_str = json.dumps(json_obj)
+                await module_client.send_message_to_output(json_str, "status")
+
+            else:
+                print('logic test (sleep)')
+                time.sleep(5)
+
+    print ( "The app is now waiting for classification setting. ")
+
+    # Run the stdin listener in the event loop
+    loop = asyncio.get_event_loop()
+    camera_finished = loop.run_in_executor(None, await halt_until_run_command)
+
+    # Wait for user to indicate they are done listening for messages
+    await camera_finished
+
+async def run_classifier(module_client, labels, videoCaptureDeviceId = 0):
+
+    # define behavior for halting the application
+    def halt_until_run_command():
+        next_frame = 0 # limit to ~10 fps here
+        while True:
+            if RUN_CLASSIFICATION:
+
+                for res, img in runner.classifier(videoCaptureDeviceId):
+                    if (next_frame > now()):
+                        time.sleep((next_frame - now()) / 1000)
+
+                    print('classification runner response', res)
+                    handled_result = handle_inference_result(res, img, labels)
+                    send_json_telemetry(module_client, handled_result)
+
+                    next_frame = now() + FRAME_TICK_MS
+
+            else:
+                print('logic test (sleep)')
+                time.sleep(5)
+
+    print ( "The app is now waiting for classification setting. ")
+
+    # Run the stdin listener in the event loop
+    loop = asyncio.get_event_loop()
+    camera_finished = loop.run_in_executor(None, halt_until_run_command)
+
+    # Wait for user to indicate they are done listening for messages
+    await camera_finished
