@@ -4,7 +4,7 @@
   "image": {
     "repository": "gptcontainerreg.azurecr.io/eicameradetect",
     "tag": {
-      "version": "0.0.5",
+      "version": "0.0.6",
       "platforms": {
         "arm32v7": "./Dockerfile.arm32v7"
       }

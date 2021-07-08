@@ -94,6 +94,13 @@
           "timeToLiveSecs": 7200
         }
       }
+    },
+    "eicameradetect": {
+      "properties.desired": {
+        "scoreThreshold": 0.2,
+        "runClassification": true,
+        "frameTickMilliseconds": 200
+      }
     }
   }
 }
