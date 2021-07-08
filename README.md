@@ -48,6 +48,8 @@ With the Linux CLI for Edge Impulse, it is possible to aquire data as well as to
 ``` $ edge-impulse-linux-runner --download modelfile.eim ```
 Later on, we will use the model along with an Edge Impulse SDK, however the SDK will be installed to the Docker image where the application runs.
 
+Note: An alternative idea is to use the [Edge Impulse API](https://docs.edgeimpulse.com/reference#downloadbuild) to automatically download the modelfile to the Docker container, e.g. by entering the EI project id a an enviroment variable and add an instruction to the Dockerfile to perform the download. 
+
 
 # Create an IoT Edge solution in Visual Studio Code
 
@@ -65,14 +67,23 @@ Then, run the Command Palette (Ctrl+Shift+P) to easy access the extension comman
 
 The application code is based on the [Image example](https://github.com/edgeimpulse/linux-sdk-python/blob/master/examples/image/classify.py) in the repository of Edge Impulse Linux SDK for Python. Comparing the files, you will notice that I have also included the Azure IoT client to send telemetry data to the IoT Hub or another module.
 
-TODO: refactor main.py  
-TODO: add enviroment variables to justify capture rate, scoring threshold value etc.
+You can adjust the code to your needs and of course 
+refactor as the application grows. In the main.py file you will find example usage of listening to updates in module configuration, report properties and sending telemetry. More ways to make use of the IoT Hub connection are found in the  [IoTHubModule class documentation](https://docs.microsoft.com/en-us/python/api/azure-iot-device/azure.iot.device.iothubmoduleclient?view=azure-python). Remember to include your own downloaded modelfile.eim to application folder.
+
+How the telemetry is handled is defined in the deployment, which you may edit in the Azure portal or in the deployment template.  
+Two route examples are provided below of sending telemetry to the default IoT Hub endpoint, and to another module:
+```
+"routes": {
+    "eicameradetectToIoTHub": "FROM /messages/modules/eicameradetect/outputs/* INTO $upstream"
+    "edgeRoute": "FROM /messages/modules/eicameradetect/outputs/* INTO BrokeredEndpoint(\"/modules/filtermodule/inputs/input1\")",
+}
+``` 
 
 ![header image](media/pythoncode.png)
 
 # Build Docker image
 
-This may be the tricky part, to come up with a Docker file that encapsulate all dependencies for the Azure IoT client, Edge Impulse as well as OpenCV for camera capture and image processing.
+This may be the tricky part, to come up with a Docker file that encapsulate all dependencies for the Azure IoT client, Edge Impulse as well as OpenCV for camera capture and image processing. The Docker image is used automatically when building and running the module from the IoT Edge solution, please see the module.json file.
 
 👋 NOTE: Below I motivate for various package installations. However, I do provide a Dockerfile that is validated on a Raspberry Pi 4 and this information is targeted to someone who might want to adjust the Dockerfile.
 
@@ -126,16 +137,15 @@ Notes:
 
 By right-clicking on the file ``` deployment.template.json ``` in VS Code you will find the option to build and push your IoT Edge solution. Thereafter, you will find the generated file ``` deployment.arm32v7.json ``` has been created in a folder named *config*. Right-click and choose *Create deployment for single device*. Make sure you have completed the steps to create a container registry (like Azure Container Registry or Docker Hub), and you probably want to fill in the registryCredentials in the deployment template to authenticate towards the registry. 
 
-After a successfull deployment, the device in Azure IoT Hub would look similar to this, where *eicameradetect* is the name of my custom module.
+After a successfull deployment, the device in Azure IoT Hub would look similar to this, where *eicameradetect* is the name of my custom module. You may also enter the page specific to the *eicameradetect* module and view/edit its module twin. Application settings can be defined in code and be updated here during runtime (maybe the threshold value needs to be increased or the sample interval decreased..). Moreover, the device may report information back to the cloud using the IoTHubModule class. 
 
 ![iothub view](media/iot_hub.png)
+![module twin](media/module_twin.png)
 
 # Running solution
 
-The images below illustrate how the solution may be set up. The website on the laptop screen is the XXX example from. However the resulting telemetry from the module may be used in various way. Learn more about telemetry routing and you can connect your data to custom websites, backend code like serverless Azure Functions etc.
-In the Azure IoT Explorer software, it is possible to monitor the incloming telemetry.
-
-TODO: provice example of routing telemetry to Event Hub
+The images below illustrate how the solution may be set up. The website on the laptop screen is the *raspberry-pi-4* example found [here](https://docs.edgeimpulse.com/docs/raspberry-pi-4). However the resulting telemetry from the module may be used in various way. Learn more about telemetry routing [here](https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-messages-d2c) and you can connect your data to custom websites, backend code like serverless Azure Functions etc.
+In the Azure IoT Explorer software, it is possible to monitor the incoming telemetry.
 
 ![Raspberry Pi](media/raspberry.jpg)
-![Raspberry Pi](media/iot_messages.png)
+![Raspberry Pi](media/prediction_telemetry.png)
